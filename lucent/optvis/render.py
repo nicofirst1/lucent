@@ -228,4 +228,4 @@ def get_layer_activ(model, layer, X):
     hook = ModuleHook(getattr(model, layer))
     model(X)
     hook.close()
-    return hook.acts, hook.grads
+    return hook.acts
