@@ -17,30 +17,32 @@ from __future__ import absolute_import, division, print_function
 
 import warnings
 from collections import OrderedDict
-import numpy as np
-from tqdm import tqdm
-from PIL import Image
-import torch
 
-from lucent.optvis import objectives, transform, param
-from lucent.misc.io import show
+import numpy as np
+import torch
+from PIL import Image
+from tqdm import tqdm
+
+from . import objectives, transform, param
+from ..misc.io.showing import show
 
 
 def render_vis(
-    model,
-    objective_f,
-    param_f=None,
-    optimizer=None,
-    transforms=None,
-    thresholds=(512,),
-    verbose=False,
-    preprocess=True,
-    progress=True,
-    show_image=True,
-    save_image=False,
-    image_name=None,
-    show_inline=False,
-    fixed_image_size=None,
+        model,
+        objective_f,
+        param_f=None,
+        optimizer=None,
+        transforms=None,
+        thresholds=(512,),
+        verbose=False,
+        preprocess=True,
+        progress=True,
+        show_image=True,
+        save_image=False,
+        image_name=None,
+        show_inline=False,
+        fixed_image_size=None,
+        return_hook=False,
 ):
     if param_f is None:
         param_f = lambda: param.image(128)
@@ -109,7 +111,7 @@ def render_vis(
                 loss = objective_f(hook)
                 loss.backward()
                 return loss
-                
+
             optimizer.step(closure)
             if i in thresholds:
                 image = tensor_to_img_array(image_f())
@@ -130,6 +132,10 @@ def render_vis(
         show(tensor_to_img_array(image_f()))
     elif show_image:
         view(image_f())
+
+    if return_hook:
+        return images, hook
+
     return images
 
 
@@ -168,16 +174,24 @@ def export(tensor, image_name=None):
 
 class ModuleHook:
     def __init__(self, module):
-        self.hook = module.register_forward_hook(self.hook_fn)
+        self.fw_hook = module.register_forward_hook(self.fw_hook_fn)
+        self.bk_hook = module.register_backward_hook(self.bk_hook_fn)
         self.module = None
-        self.features = None
+        self.acts = None
+        self.grads = None
+        self.input = None
 
-    def hook_fn(self, module, input, output):
+    def fw_hook_fn(self, module, input, output):
         self.module = module
-        self.features = output
+        self.acts = output
+        self.input = input[0]
+
+    def bk_hook_fn(self, module, grad_input, grad_output):
+        self.grads = grad_output[0]
 
     def close(self):
-        self.hook.remove()
+        self.fw_hook.remove()
+        self.bk_hook.remove()
 
 
 def hook_model(model, image_f):
@@ -199,11 +213,19 @@ def hook_model(model, image_f):
         if layer == "input":
             out = image_f()
         elif layer == "labels":
-            out = list(features.values())[-1].features
+            out = list(features.values())[-1].acts
         else:
             assert layer in features, f"Invalid layer {layer}. Retrieve the list of layers with `lucent.modelzoo.util.get_model_layers(model)`."
-            out = features[layer].features
+            out = features[layer].acts
         assert out is not None, "There are no saved feature maps. Make sure to put the model in eval mode, like so: `model.to(device).eval()`. See README for example."
         return out
 
     return hook
+
+
+@torch.no_grad()
+def get_layer_activ(model, layer, X):
+    hook = ModuleHook(getattr(model, layer))
+    model(X)
+    hook.close()
+    return hook.acts, hook.grads

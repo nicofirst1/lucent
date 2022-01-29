@@ -19,7 +19,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from decorator import decorator
-from lucent.optvis.objectives_util import _make_arg_str, _extract_act_pos, _T_handle_batch
+from .objectives_util import _make_arg_str, _extract_act_pos, _T_handle_batch
 
 
 class Objective():
