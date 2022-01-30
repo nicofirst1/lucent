@@ -204,7 +204,7 @@ def hook_model(model, image_f):
                 if layer is None:
                     # e.g. GoogLeNet's aux1 and aux2 layers
                     continue
-                features["_".join(prefix + [name])] = ModuleHook(layer)
+                features["/".join(prefix + [name])] = ModuleHook(layer)
                 hook_layers(layer, prefix=prefix + [name])
 
     hook_layers(model)
@@ -224,8 +224,14 @@ def hook_model(model, image_f):
 
 
 @torch.no_grad()
-def get_layer_activ(model, layer, X):
-    hook = ModuleHook(getattr(model, layer))
-    model(X)
+def get_layer_activ(model, layer, X, get_ret=False):
+
+    for l in layer.split("/"):
+        model= getattr(model, l)
+
+    hook = ModuleHook(model)
+    ret=model(X)
     hook.close()
+    if get_ret:
+        return hook.acts, ret
     return hook.acts
